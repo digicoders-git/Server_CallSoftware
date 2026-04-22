@@ -156,6 +156,9 @@ app.get('/api/logs', async (req, res) => {
 app.get('/api/call-data', async (req, res) => {
     if (!currentToken || !currentUserId) return res.status(401).json({ error: 'Not authenticated' });
 
+    const page    = parseInt(req.query.page)  || 1;
+    const limit   = parseInt(req.query.limit) || 10;
+
     try {
         // Step 1: Get all campaigns
         const campRes = await axios.get(`${OBD_BASE_URL}/api/obd/campaign/${currentUserId}`, {
@@ -221,7 +224,10 @@ app.get('/api/call-data', async (req, res) => {
             .filter(r => { const k = `${r.campaignId}_${r.phone}`; if (seen.has(k)) return false; seen.add(k); return true; })
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-        res.json(unique);
+        const total  = unique.length;
+        const paged  = unique.slice((page - 1) * limit, page * limit);
+
+        res.json({ data: paged, total, page, totalPages: Math.ceil(total / limit) });
     } catch (error) {
         res.status(500).json({ error: 'Failed', details: error.message });
     }
