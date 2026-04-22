@@ -22,13 +22,39 @@ let currentUserId = null;
 // Restore session from MongoDB on server start
 const restoreSession = async () => {
     try {
+        // First try DB
         const user = await User.findOne().sort({ last_login: -1 });
-        if (user) {
+        if (user && user.obd_token) {
             currentToken  = user.obd_token;
             currentUserId = user.obd_user_id;
             console.log(`Session restored for userId: ${currentUserId}`);
+            return;
         }
-    } catch (e) { console.error('Session restore error:', e.message); }
+        // If no token in DB, auto-login with env credentials
+        await autoLogin();
+    } catch (e) { 
+        console.error('Session restore error:', e.message);
+        await autoLogin();
+    }
+};
+
+const autoLogin = async () => {
+    try {
+        const username = process.env.OBD_USERNAME || 'DigiCoders';
+        const password = process.env.OBD_PASSWORD || '123456789';
+        const response = await axios.post(`${OBD_BASE_URL}/api/obd/login`, { username, password });
+        const { token, userid } = response.data;
+        currentToken  = token;
+        currentUserId = userid;
+        await User.findOneAndUpdate(
+            { username },
+            { username, obd_token: token, obd_user_id: userid, last_login: new Date() },
+            { upsert: true, new: true }
+        );
+        console.log(`Auto-login successful for userId: ${currentUserId}`);
+    } catch (e) {
+        console.error('Auto-login failed:', e.message);
+    }
 };
 
 // ── 1. Login ─────────────────────────────────────────
