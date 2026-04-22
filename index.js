@@ -241,6 +241,12 @@ app.get('/api/campaigns', async (req, res) => {
     }
 });
 
+// Auto-refresh token every 12 hours
+setInterval(async () => {
+    console.log('Auto-refreshing OBD token...');
+    await autoLogin();
+}, 12 * 60 * 60 * 1000);
+
 // ── Start ─────────────────────────────────────────────
 connectDB().then(async () => {
     await restoreSession();
