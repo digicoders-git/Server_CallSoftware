@@ -218,7 +218,7 @@ app.get('/api/call-data', async (req, res) => {
 
         const seen = new Set();
         const unique = allRows
-            .filter(r => { const k = `${r.campaignId}_${r.phone}_${r.timestamp}`; if (seen.has(k)) return false; seen.add(k); return true; })
+            .filter(r => { const k = `${r.campaignId}_${r.phone}`; if (seen.has(k)) return false; seen.add(k); return true; })
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
         res.json(unique);
