@@ -157,12 +157,37 @@ app.get('/api/call-data', async (req, res) => {
     if (!currentToken || !currentUserId) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-        const dlRes = await axios.get(`${OBD_BASE_URL}/api/obd/report/download/${currentUserId}`, {
-            headers: { 'Authorization': `Bearer ${currentToken}` },
-            timeout: 15000
+        // Step 1: Get all campaigns
+        const campRes = await axios.get(`${OBD_BASE_URL}/api/obd/campaign/${currentUserId}`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
         });
+        const allCampaigns = Array.isArray(campRes.data) ? campRes.data : [];
 
-        const reports = Array.isArray(dlRes.data) ? dlRes.data.filter(r => r.status === '2' && r.reportUrl) : [];
+        // Step 2: Get existing reports
+        const dlRes = await axios.get(`${OBD_BASE_URL}/api/obd/report/download/${currentUserId}`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
+        });
+        const existingReports = Array.isArray(dlRes.data) ? dlRes.data : [];
+        const reportedIds = new Set(existingReports.map(r => String(r.campaignId)));
+
+        // Step 3: Auto-generate reports for campaigns that don't have one
+        for (const camp of allCampaigns) {
+            if (!reportedIds.has(String(camp.campaignId))) {
+                try {
+                    await axios.post(`${OBD_BASE_URL}/api/obd/report/generate`,
+                        { campaignId: camp.campaignId, reportType: 'full' },
+                        { headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 10000 }
+                    );
+                    console.log(`Report generated for campaign: ${camp.campaignId}`);
+                } catch(e) { console.error('Report gen error:', e.message); }
+            }
+        }
+
+        // Step 4: Re-fetch reports after generation
+        const dlRes2 = await axios.get(`${OBD_BASE_URL}/api/obd/report/download/${currentUserId}`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
+        });
+        const reports = Array.isArray(dlRes2.data) ? dlRes2.data.filter(r => r.status === '2' && r.reportUrl) : [];
         let allRows = [];
 
         for (const report of reports) {
