@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const MONGO_URI = 'mongodb+srv://digicodersdevelopment_db_user:gqkXUNP3JO1v3Gp9@cluster0.zchfesj.mongodb.net/calldatasoftware?appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://digicodersdevelopment_db_user:gqkXUNP3JO1v3Gp9@cluster0.zchfesj.mongodb.net/calldatasoftware?appName=Cluster0';
 
 const connectDB = async () => {
     await mongoose.connect(MONGO_URI);

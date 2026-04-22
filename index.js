@@ -194,5 +194,9 @@ app.get('/api/campaigns', async (req, res) => {
 // ── Start ─────────────────────────────────────────────
 connectDB().then(async () => {
     await restoreSession();
-    app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
-}).catch(err => console.error('MongoDB connection failed:', err));
+    const PORT = process.env.PORT || 5001;
+    app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+}).catch(err => {
+    console.error('Startup failed:', err.message);
+    process.exit(1);
+});
