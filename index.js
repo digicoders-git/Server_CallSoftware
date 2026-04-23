@@ -6,7 +6,6 @@ const FormData = require('form-data');
 const AdmZip   = require('adm-zip');
 const { parse } = require('csv-parse/sync');
 const XLSX     = require('xlsx');
-const XLSX     = require('xlsx');
 const { connectDB, User, Student, Prompt, Campaign, CallLog } = require('./database');
 
 const app    = express();
