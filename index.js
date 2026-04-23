@@ -194,9 +194,9 @@ app.post('/api/login', async (req, res) => {
 });
 
 // ── 2. Sync OBD → MongoDB (manual trigger) ───────────
-app.post('/api/sync', async (req, res) => {
-    const result = await syncReportsToDb();
-    res.json(result);
+app.post("/api/sync", (req, res) => {
+    res.json({ message: "Sync started in background" });
+    syncReportsToDb().then(r => console.log("Sync complete:", JSON.stringify(r))).catch(e => console.error("Sync error:", e.message));
 });
 
 // ── 3. Webhook Receiver ───────────────────────────────
