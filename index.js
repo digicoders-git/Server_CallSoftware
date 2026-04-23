@@ -156,6 +156,9 @@ app.get('/api/logs', async (req, res) => {
 app.get('/api/call-data', async (req, res) => {
     if (!currentToken || !currentUserId) return res.status(401).json({ error: 'Not authenticated' });
 
+    const startDate = req.query.startDate || null;
+    const endDate   = req.query.endDate   || null;
+
     try {
         const campRes = await axios.get(`${OBD_BASE_URL}/api/obd/campaign/${currentUserId}`, {
             headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
@@ -233,10 +236,17 @@ app.get('/api/call-data', async (req, res) => {
             } catch (e) { console.error('zip error:', e.message); }
         }
 
-        const unique = allRows
+        const sorted = allRows
+            .filter(r => {
+                if (!startDate && !endDate) return true;
+                const t = new Date(r.timestamp);
+                if (startDate && t < new Date(startDate)) return false;
+                if (endDate   && t > new Date(endDate + ' 23:59:59')) return false;
+                return true;
+            })
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-        res.json(unique);
+        res.json(sorted);
     } catch (error) {
         res.status(500).json({ error: 'Failed', details: error.message });
     }
