@@ -112,13 +112,6 @@ const syncReportsToDb = async () => {
 
         for (const report of latestReports) {
             try {
-                // Check if this campaign already synced
-                const existing = await CallLog.findOne({ campaign_id: String(report.campaignId) });
-                if (existing) {
-                    console.log(`Campaign ${report.campaignId} already in DB, skipping`);
-                    continue;
-                }
-
                 const zipRes = await axios.get(report.reportUrl, { responseType: 'arraybuffer', timeout: 30000 });
                 const zip = new AdmZip(Buffer.from(zipRes.data));
 
@@ -126,11 +119,14 @@ const syncReportsToDb = async () => {
                     if (!entry.entryName.endsWith('.csv')) continue;
                     const rows = parse(entry.getData().toString('utf8'), { columns: true, skip_empty_lines: true });
 
+                    // Delete existing records for this campaign before re-inserting
+                    await CallLog.deleteMany({ campaign_id: String(report.campaignId) });
+
                     const docs = [];
                     rows.forEach(row => {
                         if (!row.bni) return;
                         const status = (row.answer_status || '').toUpperCase();
-                        if (status === 'INITIATED') return;
+                        if (['INITIATED', 'RINGING'].includes(status)) return;
                         docs.push({
                             campaign_id:   row.camp_id || String(report.campaignId),
                             campaign_name: report.campaignName || '',
