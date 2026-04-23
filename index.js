@@ -133,7 +133,7 @@ const syncReportsToDb = async () => {
                     rows.forEach(row => {
                         if (!row.bni) return;
                         const status = (row.answer_status || '').toUpperCase();
-                        if (['INITIATED', 'RINGING'].includes(status)) return;
+                        
                         docs.push({
                             campaign_id:   row.camp_id || String(report.campaignId),
                             campaign_name: report.campaignName || '',
@@ -240,7 +240,7 @@ app.post('/api/import', upload.single('file'), async (req, res) => {
                 hangup_cause:  String(keys.hangupcause || keys.hangup_cause || ''),
                 cli:           String(keys.cli || '')
             };
-        }).filter(d => d.phone && !['INITIATED','RINGING'].includes(d.status));
+        }).filter(d => d.phone);
 
         if (docs.length === 0) return res.status(400).json({ error: 'No valid records found' });
 
@@ -278,7 +278,7 @@ app.post("/api/import", upload.single("file"), async (req, res) => {
             Object.keys(row).forEach(k => { r[k.toLowerCase().trim()] = row[k]; });
             const status = String(r.answer_status || r.status || "").toUpperCase();
             return { campaign_id: String(r.camp_id || r.campaign_id || ""), campaign_name: String(r.campaign_name || ""), phone: String(r.bni || r.phone || r.mobile || ""), status, dtmf: String(r.dtmf || r.dtmf_sequence || "") || null, duration: parseInt(r.billing_duration || r.duration || 0), timestamp: r.end_time ? new Date(r.end_time) : new Date(), agent_number: String(r.agent_number || ""), hangup_cause: String(r.hangup_cause || ""), cli: String(r.cli || "") };
-        }).filter(d => d.phone && !["INITIATED","RINGING"].includes(d.status));
+        }).filter(d => d.phone);
         if (!docs.length) return res.status(400).json({ error: "No valid records found" });
         let inserted = 0;
         for (let i = 0; i < docs.length; i += 500) {
