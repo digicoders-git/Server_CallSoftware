@@ -91,7 +91,13 @@ const syncReportsToDb = async () => {
             headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
         });
         const allReports = Array.isArray(dlRes2.data)
-            ? dlRes2.data.filter(r => r.status === '2' && r.reportUrl && r.reportUrl !== 'no_data' && r.reportUrl.startsWith('http'))
+            ? dlRes2.data.filter(r => 
+                r.status === '2' && 
+                r.reportUrl && 
+                r.reportUrl !== 'no_data' && 
+                r.reportUrl.startsWith('http') &&
+                r.reportUrl.includes('_full') // only full reports
+              )
             : [];
 
         const latestReports = Object.values(
