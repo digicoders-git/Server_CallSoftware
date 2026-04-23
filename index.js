@@ -182,11 +182,22 @@ app.get('/api/call-data', async (req, res) => {
             }
         }
 
-        // Step 4: Re-fetch reports after generation
+        // Step 4: Re-fetch reports after generation — keep only latest per campaign
         const dlRes2 = await axios.get(`${OBD_BASE_URL}/api/obd/report/download/${currentUserId}`, {
             headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
         });
-        const reports = Array.isArray(dlRes2.data) ? dlRes2.data.filter(r => r.status === '2' && r.reportUrl && r.reportUrl !== 'no_data' && r.reportUrl.startsWith('http')) : [];
+        const allReports = Array.isArray(dlRes2.data) ? dlRes2.data.filter(r => r.status === '2' && r.reportUrl && r.reportUrl !== 'no_data' && r.reportUrl.startsWith('http')) : [];
+        
+        // Keep only latest report per campaign
+        const latestReports = Object.values(
+            allReports.reduce((acc, r) => {
+                if (!acc[r.campaignId] || new Date(r.reqDate) > new Date(acc[r.campaignId].reqDate)) {
+                    acc[r.campaignId] = r;
+                }
+                return acc;
+            }, {})
+        );
+        const reports = latestReports;
         let allRows = [];
 
         for (const report of reports) {
@@ -198,6 +209,7 @@ app.get('/api/call-data', async (req, res) => {
                     if (!entry.entryName.endsWith('.csv')) continue;
                     const rows = parse(entry.getData().toString('utf8'), { columns: true, skip_empty_lines: true });
                     rows.forEach(row => {
+                        if (!row.bni) return; // skip empty phone
                         allRows.push({
                             campaignId:  row.camp_id || '',
                             campaignName: report.campaignName || '',
