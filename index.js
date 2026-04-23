@@ -19,10 +19,9 @@ const OBD_BASE_URL = 'https://obd3api.expressivr.com';
 let currentToken  = null;
 let currentUserId = null;
 
-// Restore session from MongoDB on server start
+// ── Session Management ────────────────────────────────
 const restoreSession = async () => {
     try {
-        // First try DB
         const user = await User.findOne().sort({ last_login: -1 });
         if (user && user.obd_token) {
             currentToken  = user.obd_token;
@@ -30,9 +29,8 @@ const restoreSession = async () => {
             console.log(`Session restored for userId: ${currentUserId}`);
             return;
         }
-        // If no token in DB, auto-login with env credentials
         await autoLogin();
-    } catch (e) { 
+    } catch (e) {
         console.error('Session restore error:', e.message);
         await autoLogin();
     }
@@ -57,109 +55,12 @@ const autoLogin = async () => {
     }
 };
 
-// ── 1. Login ─────────────────────────────────────────
-app.post('/api/login', async (req, res) => {
-    const { username, password } = req.body;
-    try {
-        const response = await axios.post(`${OBD_BASE_URL}/api/obd/login`, { username, password });
-        const { token, userid } = response.data;
-
-        currentToken  = token;
-        currentUserId = userid;
-
-        await User.findOneAndUpdate(
-            { username },
-            { username, obd_token: token, obd_user_id: userid, last_login: new Date() },
-            { upsert: true, new: true }
-        );
-
-        res.json(response.data);
-    } catch (error) {
-        console.error('Login error:', error.response?.data || error.message);
-        res.status(error.response?.status || 500).json({ error: 'Login failed' });
-    }
-});
-
-// ── 2. Voice File Upload ──────────────────────────────
-app.post('/api/upload-prompt', upload.single('waveFile'), async (req, res) => {
-    if (!currentToken) return res.status(401).json({ error: 'Not authenticated' });
-
-    const { fileName, promptCategory, fileType } = req.body;
-    const form = new FormData();
-    form.append('waveFile', req.file.buffer, { filename: req.file.originalname });
-    form.append('userId',         currentUserId);
-    form.append('fileName',       fileName);
-    form.append('promptCategory', promptCategory);
-    form.append('fileType',       fileType);
+// ── Core: Sync OBD reports to MongoDB ────────────────
+const syncReportsToDb = async () => {
+    if (!currentToken || !currentUserId) return { synced: 0, error: 'Not authenticated' };
 
     try {
-        const response = await axios.post(`${OBD_BASE_URL}/api/obd/promptupload`, form, {
-            headers: { ...form.getHeaders(), 'Authorization': `Bearer ${currentToken}` }
-        });
-
-        await Prompt.create({
-            obd_prompt_id: response.data.promptId,
-            file_name:     fileName,
-            category:      promptCategory,
-            status:        'PENDING_APPROVAL'
-        });
-
-        res.json(response.data);
-    } catch (error) {
-        res.status(error.response?.status || 500).json({ error: 'Upload failed' });
-    }
-});
-
-// ── 3. Webhook Receiver ───────────────────────────────
-app.post('/api/webhook/obd', async (req, res) => {
-    const data = req.body;
-    console.log('OBD Webhook:', JSON.stringify(data));
-
-    const campaignId = data.campaignId || data.campaign_id || data.CampaignId || '';
-    const phone      = data.phone      || data.Phone      || data.mobile      || '';
-    const status     = (data.status    || data.Status     || data.callStatus  || 'UNKNOWN').toUpperCase();
-    const dtmf       = data.dtmf       || data.Dtmf       || data.DTMF        || null;
-    const duration   = parseInt(data.duration || data.Duration || 0);
-
-    try {
-        await CallLog.create({ campaign_id: campaignId, phone, status, dtmf, duration });
-    } catch (e) { console.error('Webhook DB error:', e.message); }
-
-    res.json({ message: 'ok' });
-});
-
-// ── 4. Students ───────────────────────────────────────
-app.get('/api/students', async (req, res) => {
-    try {
-        const students = await Student.find().sort({ _id: -1 });
-        res.json(students);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/students', async (req, res) => {
-    const { name, phone } = req.body;
-    try {
-        const student = await Student.create({ name, phone });
-        res.json(student);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── 5. Call Logs from DB ──────────────────────────────
-app.get('/api/logs', async (req, res) => {
-    try {
-        const logs = await CallLog.find().sort({ timestamp: -1 });
-        res.json(logs);
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── 6. Call Data from OBD Reports ────────────────────
-app.get('/api/call-data', async (req, res) => {
-    if (!currentToken || !currentUserId) return res.status(401).json({ error: 'Not authenticated' });
-
-    const startDate = req.query.startDate || null;
-    const endDate   = req.query.endDate   || null;
-
-    try {
+        // Step 1: Get all campaigns
         const campRes = await axios.get(`${OBD_BASE_URL}/api/obd/campaign/${currentUserId}`, {
             headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
         });
@@ -185,82 +86,172 @@ app.get('/api/call-data', async (req, res) => {
             }
         }
 
-        // Step 4: Re-fetch reports after generation — keep only latest per campaign
+        // Step 4: Re-fetch reports — prefer full over dtmf, latest per campaign
         const dlRes2 = await axios.get(`${OBD_BASE_URL}/api/obd/report/download/${currentUserId}`, {
             headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
         });
-        const allReports = Array.isArray(dlRes2.data) ? dlRes2.data.filter(r => r.status === '2' && r.reportUrl && r.reportUrl !== 'no_data' && r.reportUrl.startsWith('http')) : [];
-        
-        // Keep only best report per campaign — prefer full over dtmf, then latest
+        const allReports = Array.isArray(dlRes2.data)
+            ? dlRes2.data.filter(r => r.status === '2' && r.reportUrl && r.reportUrl !== 'no_data' && r.reportUrl.startsWith('http'))
+            : [];
+
         const latestReports = Object.values(
             allReports.reduce((acc, r) => {
                 const existing = acc[r.campaignId];
                 if (!existing) { acc[r.campaignId] = r; return acc; }
-                // Prefer full report over dtmf
                 const isFull = r.reportUrl.includes('_full');
                 const existingFull = existing.reportUrl.includes('_full');
                 if (isFull && !existingFull) { acc[r.campaignId] = r; return acc; }
                 if (!isFull && existingFull) return acc;
-                // Same type — pick latest
                 if (new Date(r.reqDate) > new Date(existing.reqDate)) acc[r.campaignId] = r;
                 return acc;
             }, {})
         );
-        const reports = latestReports;
-        let allRows = [];
 
-        for (const report of reports) {
+        // Step 5: Download ZIP, parse CSV, save to MongoDB
+        let totalSynced = 0;
+
+        for (const report of latestReports) {
             try {
-                const zipRes = await axios.get(report.reportUrl, { responseType: 'arraybuffer', timeout: 15000 });
+                // Check if this campaign already synced
+                const existing = await CallLog.findOne({ campaign_id: String(report.campaignId) });
+                if (existing) {
+                    console.log(`Campaign ${report.campaignId} already in DB, skipping`);
+                    continue;
+                }
+
+                const zipRes = await axios.get(report.reportUrl, { responseType: 'arraybuffer', timeout: 30000 });
                 const zip = new AdmZip(Buffer.from(zipRes.data));
 
                 for (const entry of zip.getEntries()) {
                     if (!entry.entryName.endsWith('.csv')) continue;
                     const rows = parse(entry.getData().toString('utf8'), { columns: true, skip_empty_lines: true });
+
+                    const docs = [];
                     rows.forEach(row => {
-                        if (!row.bni) return; // skip empty phone
+                        if (!row.bni) return;
                         const status = (row.answer_status || '').toUpperCase();
-                        if (status === 'INITIATED') return; // skip initiated calls
-                        allRows.push({
-                            campaignId:  row.camp_id || '',
-                            campaignName: report.campaignName || '',
-                            phone:       row.bni || '',
-                            status:      (row.answer_status || '').toUpperCase(),
-                            dtmf:        row.dtmf || row.dtmf_sequence || null,
-                            duration:    parseInt(row.billing_duration || row.patch_duration || 0),
-                            timestamp:   row.end_time || row.start_time || '',
-                            agentNumber: row.agent_number || '',
-                            hangupCause: row.hangup_cause || '',
-                            cli:         row.cli || ''
+                        if (status === 'INITIATED') return;
+                        docs.push({
+                            campaign_id:   row.camp_id || String(report.campaignId),
+                            campaign_name: report.campaignName || '',
+                            phone:         row.bni,
+                            status,
+                            dtmf:          row.dtmf || row.dtmf_sequence || null,
+                            duration:      parseInt(row.billing_duration || row.patch_duration || 0),
+                            timestamp:     new Date(row.end_time || row.start_time || Date.now()),
+                            agent_number:  row.agent_number || '',
+                            hangup_cause:  row.hangup_cause || '',
+                            cli:           row.cli || ''
                         });
                     });
+
+                    if (docs.length > 0) {
+                        await CallLog.insertMany(docs, { ordered: false });
+                        totalSynced += docs.length;
+                        console.log(`Synced ${docs.length} records for campaign ${report.campaignId}`);
+                    }
                 }
-            } catch (e) { console.error('zip error:', e.message); }
+            } catch (e) { console.error(`Sync error for ${report.campaignId}:`, e.message); }
         }
 
-        const sorted = allRows
-            .filter(r => {
-                if (!startDate && !endDate) return true;
-                const t = new Date(r.timestamp);
-                if (startDate && t < new Date(startDate)) return false;
-                if (endDate   && t > new Date(endDate + ' 23:59:59')) return false;
-                return true;
-            })
-            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        return { synced: totalSynced };
+    } catch (e) {
+        console.error('syncReportsToDb error:', e.message);
+        return { error: e.message };
+    }
+};
 
-        res.json(sorted);
+// ── 1. Login ──────────────────────────────────────────
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const response = await axios.post(`${OBD_BASE_URL}/api/obd/login`, { username, password });
+        const { token, userid } = response.data;
+        currentToken  = token;
+        currentUserId = userid;
+        await User.findOneAndUpdate(
+            { username },
+            { username, obd_token: token, obd_user_id: userid, last_login: new Date() },
+            { upsert: true, new: true }
+        );
+        res.json(response.data);
     } catch (error) {
-        res.status(500).json({ error: 'Failed', details: error.message });
+        res.status(error.response?.status || 500).json({ error: 'Login failed' });
     }
 });
 
-// ── 7. Live Campaigns from OBD ────────────────────────
+// ── 2. Sync OBD → MongoDB (manual trigger) ───────────
+app.post('/api/sync', async (req, res) => {
+    const result = await syncReportsToDb();
+    res.json(result);
+});
+
+// ── 3. Webhook Receiver ───────────────────────────────
+app.post('/api/webhook/obd', async (req, res) => {
+    const data = req.body;
+    const campaignId = data.campaignId || data.campaign_id || '';
+    const phone      = data.phone || data.Phone || data.mobile || '';
+    const status     = (data.status || data.callStatus || 'UNKNOWN').toUpperCase();
+    const dtmf       = data.dtmf || data.DTMF || null;
+    const duration   = parseInt(data.duration || 0);
+    try {
+        await CallLog.create({ campaign_id: campaignId, phone, status, dtmf, duration });
+    } catch (e) { console.error('Webhook DB error:', e.message); }
+    res.json({ message: 'ok' });
+});
+
+// ── 4. Students ───────────────────────────────────────
+app.get('/api/students', async (req, res) => {
+    try {
+        res.json(await Student.find().sort({ _id: -1 }));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/students', async (req, res) => {
+    try {
+        res.json(await Student.create(req.body));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 5. Call Data from MongoDB ─────────────────────────
+app.get('/api/call-data', async (req, res) => {
+    try {
+        const { startDate, endDate, campaignId } = req.query;
+        const filter = {};
+
+        if (startDate || endDate) {
+            filter.timestamp = {};
+            if (startDate) filter.timestamp.$gte = new Date(startDate);
+            if (endDate)   filter.timestamp.$lte = new Date(endDate + 'T23:59:59');
+        }
+
+        if (campaignId) filter.campaign_id = campaignId;
+
+        const logs = await CallLog.find(filter).sort({ timestamp: -1 });
+
+        const result = logs.map(l => ({
+            campaignId:   l.campaign_id,
+            campaignName: l.campaign_name,
+            phone:        l.phone,
+            status:       l.status,
+            dtmf:         l.dtmf,
+            duration:     l.duration,
+            timestamp:    l.timestamp,
+            agentNumber:  l.agent_number,
+            hangupCause:  l.hangup_cause,
+            cli:          l.cli
+        }));
+
+        res.json(result);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 6. Live Campaigns from OBD ────────────────────────
 app.get('/api/campaigns', async (req, res) => {
     if (!currentToken || !currentUserId) return res.status(401).json({ error: 'Not authenticated' });
     try {
         const response = await axios.get(`${OBD_BASE_URL}/api/obd/campaign/${currentUserId}`, {
-            headers: { 'Authorization': `Bearer ${currentToken}` },
-            timeout: 15000
+            headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
         });
         res.json(response.data);
     } catch (error) {
@@ -268,7 +259,7 @@ app.get('/api/campaigns', async (req, res) => {
     }
 });
 
-// ── 8. Clear all cached data (admin use)
+// ── 7. Clear all call logs ────────────────────────────
 app.delete('/api/clear-data', async (req, res) => {
     try {
         await CallLog.deleteMany({});
@@ -276,7 +267,7 @@ app.delete('/api/clear-data', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Auto-refresh token every 12 hours
+// ── Auto-refresh token every 12 hours ────────────────
 setInterval(async () => {
     console.log('Auto-refreshing OBD token...');
     await autoLogin();

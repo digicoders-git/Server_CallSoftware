@@ -38,12 +38,16 @@ const CampaignSchema = new mongoose.Schema({
 });
 
 const CallLogSchema = new mongoose.Schema({
-    campaign_id: String,
-    phone:       String,
-    status:      String,
-    dtmf:        String,
-    duration:    Number,
-    timestamp:   { type: Date, default: Date.now }
+    campaign_id:   String,
+    campaign_name: String,
+    phone:         String,
+    status:        String,
+    dtmf:          String,
+    duration:      Number,
+    timestamp:     { type: Date, default: Date.now },
+    agent_number:  String,
+    hangup_cause:  String,
+    cli:           String
 });
 
 // ── Models ───────────────────────────────────────────
