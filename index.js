@@ -215,12 +215,8 @@ app.get('/api/call-data', async (req, res) => {
             } catch (e) { console.error('zip error:', e.message); }
         }
 
-        const seen = new Set();
         const unique = allRows
-            .filter(r => { const k = `${r.campaignId}_${r.phone}`; if (seen.has(k)) return false; seen.add(k); return true; })
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-        const total  = unique.length;
 
         res.json(unique);
     } catch (error) {
