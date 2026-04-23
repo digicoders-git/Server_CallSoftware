@@ -156,11 +156,7 @@ app.get('/api/logs', async (req, res) => {
 app.get('/api/call-data', async (req, res) => {
     if (!currentToken || !currentUserId) return res.status(401).json({ error: 'Not authenticated' });
 
-    const page    = parseInt(req.query.page)  || 1;
-    const limit   = parseInt(req.query.limit) || 10;
-
     try {
-        // Step 1: Get all campaigns
         const campRes = await axios.get(`${OBD_BASE_URL}/api/obd/campaign/${currentUserId}`, {
             headers: { 'Authorization': `Bearer ${currentToken}` }, timeout: 15000
         });
@@ -225,9 +221,8 @@ app.get('/api/call-data', async (req, res) => {
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
         const total  = unique.length;
-        const paged  = unique.slice((page - 1) * limit, page * limit);
 
-        res.json({ data: paged, total, page, totalPages: Math.ceil(total / limit) });
+        res.json(unique);
     } catch (error) {
         res.status(500).json({ error: 'Failed', details: error.message });
     }
