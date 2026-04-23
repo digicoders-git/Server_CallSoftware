@@ -355,6 +355,11 @@ app.delete('/api/clear-data', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Keep alive ping every 10 min ────────────────────
+setInterval(async () => {
+    try { await axios.get('https://server-callsoftware.onrender.com/api/campaigns'); } catch(e) {}
+}, 10 * 60 * 1000);
+
 // ── Auto-refresh token every 12 hours ────────────────
 setInterval(async () => {
     console.log('Auto-refreshing OBD token...');
