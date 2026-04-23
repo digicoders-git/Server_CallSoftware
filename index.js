@@ -219,6 +219,8 @@ app.get('/api/call-data', async (req, res) => {
                     const rows = parse(entry.getData().toString('utf8'), { columns: true, skip_empty_lines: true });
                     rows.forEach(row => {
                         if (!row.bni) return; // skip empty phone
+                        const status = (row.answer_status || '').toUpperCase();
+                        if (status === 'INITIATED') return; // skip initiated calls
                         allRows.push({
                             campaignId:  row.camp_id || '',
                             campaignName: report.campaignName || '',
