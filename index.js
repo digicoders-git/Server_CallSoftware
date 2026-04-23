@@ -188,12 +188,18 @@ app.get('/api/call-data', async (req, res) => {
         });
         const allReports = Array.isArray(dlRes2.data) ? dlRes2.data.filter(r => r.status === '2' && r.reportUrl && r.reportUrl !== 'no_data' && r.reportUrl.startsWith('http')) : [];
         
-        // Keep only latest report per campaign
+        // Keep only best report per campaign — prefer full over dtmf, then latest
         const latestReports = Object.values(
             allReports.reduce((acc, r) => {
-                if (!acc[r.campaignId] || new Date(r.reqDate) > new Date(acc[r.campaignId].reqDate)) {
-                    acc[r.campaignId] = r;
-                }
+                const existing = acc[r.campaignId];
+                if (!existing) { acc[r.campaignId] = r; return acc; }
+                // Prefer full report over dtmf
+                const isFull = r.reportUrl.includes('_full');
+                const existingFull = existing.reportUrl.includes('_full');
+                if (isFull && !existingFull) { acc[r.campaignId] = r; return acc; }
+                if (!isFull && existingFull) return acc;
+                // Same type — pick latest
+                if (new Date(r.reqDate) > new Date(existing.reqDate)) acc[r.campaignId] = r;
                 return acc;
             }, {})
         );
