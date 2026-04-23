@@ -266,6 +266,14 @@ app.get('/api/campaigns', async (req, res) => {
     }
 });
 
+// ── 8. Clear all cached data (admin use)
+app.delete('/api/clear-data', async (req, res) => {
+    try {
+        await CallLog.deleteMany({});
+        res.json({ message: 'All call logs cleared' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Auto-refresh token every 12 hours
 setInterval(async () => {
     console.log('Auto-refreshing OBD token...');
