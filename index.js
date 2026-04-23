@@ -148,8 +148,19 @@ const syncReportsToDb = async () => {
                     });
 
                     if (docs.length > 0) {
-                        await CallLog.insertMany(docs, { ordered: false });
-                        totalSynced += docs.length;
+                        // Insert in batches of 500 to avoid memory issues
+                        const BATCH = 500;
+                        for (let i = 0; i < docs.length; i += BATCH) {
+                            const batch = docs.slice(i, i + BATCH);
+                            try {
+                                const result = await CallLog.insertMany(batch, { ordered: false });
+                                totalSynced += result.length;
+                            } catch(insertErr) {
+                                const inserted = insertErr.insertedDocs?.length || 0;
+                                totalSynced += inserted;
+                                console.log(`Batch insert partial: ${inserted}/${batch.length}`);
+                            }
+                        }
                         console.log(`Synced ${docs.length} records for campaign ${report.campaignId}`);
                     }
                 }
