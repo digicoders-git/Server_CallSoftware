@@ -223,7 +223,7 @@ app.get('/api/call-data', async (req, res) => {
 
         if (startDate || endDate) {
             filter.timestamp = {};
-            if (startDate) filter.timestamp.$gte = new Date(startDate);
+            if (startDate) filter.timestamp.$gte = new Date(startDate + 'T00:00:00');
             if (endDate)   filter.timestamp.$lte = new Date(endDate + 'T23:59:59');
         }
 
