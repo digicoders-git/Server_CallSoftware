@@ -365,7 +365,7 @@ app.delete('/api/clear-data', async (req, res) => {
 // ══════════════════════════════════════════════════════
 // KEEP ALIVE & TOKEN REFRESH
 // ══════════════════════════════════════════════════════
-setInterval(() => axios.get('https://server-callsoftware.onrender.com/api/campaigns').catch(() => {}), 10 * 60 * 1000);
+setInterval(() => axios.get('https://server-callsoftware-i3m3.onrender.com/api/campaigns').catch(() => {}), 10 * 60 * 1000);
 setInterval(() => autoLogin(), 12 * 60 * 60 * 1000);
 
 // ══════════════════════════════════════════════════════
